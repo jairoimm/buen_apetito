@@ -1,84 +1,75 @@
-
-
-
 from django.test import TestCase
-from negocios.models import (
-    Negocio, Cliente, Insumo, Inventario,
-    Producto, RecetaProducto, Categoria
-)
-from negocios.services.venta_service import crear_venta
+from negocios.models import Negocio, Insumo, Inventario, MovimientoInventario
 
 
-class VentaServiceTest(TestCase):
+def crear_negocio():
+    return Negocio.objects.create(
+        nombre="Test", direccion="Test", comuna="Test",
+        telefono="123", tipo_negocio="CARRO", margen=70
+    )
+
+
+class InventarioModelTest(TestCase):
 
     def setUp(self):
-        self.negocio = Negocio.objects.create(
-            nombre="Test",
-            direccion="Test",
-            comuna="Test",
-            telefono="123",
-            tipo_negocio="CARRO",
-            margen=70
-        )
-
-        self.cliente = Cliente.objects.create(
-            negocio=self.negocio,
-            nombre="Cliente Test"
-        )
-
+        self.negocio = crear_negocio()
         self.insumo = Insumo.objects.create(
-            negocio=self.negocio,
-            nombre="Manjar",
-            unidad_medida="GR",
-            costo_unitario=5
+            negocio=self.negocio, nombre="Azúcar", unidad_medida="KG", costo_unitario=1
         )
 
+    def test_stock_disponible(self):
+        inv = Inventario.objects.create(
+            insumo=self.insumo, stock_actual=100, stock_reservado=20
+        )
+        self.assertEqual(inv.stock_disponible, 80)
+
+    def test_bajo_stock_verdadero(self):
+        inv = Inventario.objects.create(
+            insumo=self.insumo, stock_actual=5, stock_minimo=10
+        )
+        self.assertTrue(inv.bajo_stock)
+
+    def test_bajo_stock_falso(self):
+        inv = Inventario.objects.create(
+            insumo=self.insumo, stock_actual=50, stock_minimo=10
+        )
+        self.assertFalse(inv.bajo_stock)
+
+    def test_stock_disponible_sin_reserva(self):
+        inv = Inventario.objects.create(insumo=self.insumo, stock_actual=200)
+        self.assertEqual(inv.stock_disponible, 200)
+
+
+class MovimientoInventarioSignalTest(TestCase):
+
+    def setUp(self):
+        self.negocio = crear_negocio()
+        self.insumo = Insumo.objects.create(
+            negocio=self.negocio, nombre="Harina", unidad_medida="KG", costo_unitario=2
+        )
         self.inventario = Inventario.objects.create(
-            insumo=self.insumo,
-            stock_actual=1000
+            insumo=self.insumo, stock_actual=0
         )
 
-        self.categoria = Categoria.objects.create(
-            negocio=self.negocio,
-            nombre="Churros"
+    def test_compra_aumenta_stock(self):
+        MovimientoInventario.objects.create(
+            insumo=self.insumo, tipo="COMPRA", cantidad=50
         )
+        self.inventario.refresh_from_db()
+        self.assertEqual(self.inventario.stock_actual, 50)
 
-        self.producto = Producto.objects.create(
-            negocio=self.negocio,
-            categoria=self.categoria,
-            tipo="P",
-            nombre="Churro",
-            precio_venta=1000
+    def test_merma_reduce_stock(self):
+        self.inventario.stock_actual = 100
+        self.inventario.save()
+        MovimientoInventario.objects.create(
+            insumo=self.insumo, tipo="MERMA", cantidad=-10
         )
+        self.inventario.refresh_from_db()
+        self.assertEqual(self.inventario.stock_actual, 90)
 
-        RecetaProducto.objects.create(
-            producto=self.producto,
-            insumo=self.insumo,
-            cantidad=50
-        )
-
-    def test_crear_venta_ok(self):
-
-        venta = crear_venta(
-            negocio=self.negocio,
-            cliente=self.cliente,
-            items=[
-                {"producto": self.producto, "cantidad": 2}
-            ]
-        )
-
-        self.insumo.refresh_from_db()
-        self.assertEqual(venta.total, 2000)
-        self.assertEqual(venta.detalle.count(), 1)
-        self.assertEqual(self.insumo.inventario.stock_actual, 900)
-
-    def test_venta_sin_stock(self):
-
-        with self.assertRaises(Exception):
-            crear_venta(
-                negocio=self.negocio,
-                cliente=self.cliente,
-                items=[
-                    {"producto": self.producto, "cantidad": 100}
-                ]
-            )
+    def test_multiples_movimientos_acumulan(self):
+        MovimientoInventario.objects.create(insumo=self.insumo, tipo="COMPRA", cantidad=100)
+        MovimientoInventario.objects.create(insumo=self.insumo, tipo="COMPRA", cantidad=50)
+        MovimientoInventario.objects.create(insumo=self.insumo, tipo="MERMA", cantidad=-20)
+        self.inventario.refresh_from_db()
+        self.assertEqual(self.inventario.stock_actual, 130)
