@@ -1,0 +1,23 @@
+# Entornos virtuales (el que creamos anteriormente)
+venv/
+env/
+.env
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Base de datos local (SQLite)
+db.sqlite3
+
+# Archivos de configuración de VS Code
+.vscode/
+
+# Archivos de migraciones (opcional, pero recomendado ignorar solo los archivos compilados si es necesario)
+# Nota: Generalmente es bueno subir los archivos de migración (.py) a Git, 
+# pero ignora los archivos de caché si los hubiera.
+
+# Logs y archivos temporales
+*.log
+.DS_Store
